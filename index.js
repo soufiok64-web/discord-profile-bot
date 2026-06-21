@@ -4,14 +4,13 @@ const {
     SlashCommandBuilder,
     Routes,
     REST,
-    PermissionFlagsBits,
     EmbedBuilder,
     ActionRowBuilder,
     ButtonBuilder,
-    ButtonStyle,
-    AttachmentBuilder
+    ButtonStyle
 } = require('discord.js');
 
+// قراءة المتغيرات من سيرفر Railway تلقائياً لحماية بياناتك
 const TOKEN = process.env.TOKEN;
 const CLIENT_ID = process.env.CLIENT_ID;
 
@@ -20,38 +19,23 @@ const client = new Client({
 });
 
 client.once('ready', async () => {
-    console.log(`${client.user.tag} Online`);
+    console.log(`${client.user.tag} Online and ready to upload!`);
 
+    // إنشاء أمر الـ Slash الجديد لرفع الصور
     const commands = [
         new SlashCommandBuilder()
-            .setName('avatar')
-            .setDescription('Send avatar with download button')
-            .addUserOption(option =>
-                option.setName('user')
-                    .setDescription('Target user')
+            .setName('upload_image')
+            .setDescription('رفع صورة إلى السيرفر مع زر تحميل للخاص')
+            .addAttachmentOption(option =>
+                option.setName('image')
+                    .setDescription('اختر الصورة من مكتبة الصور الخاصة بك')
                     .setRequired(true)
             )
-            .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
-
-        new SlashCommandBuilder()
-            .setName('banner')
-            .setDescription('Send banner with download button')
-            .addUserOption(option =>
-                option.setName('user')
-                    .setDescription('Target user')
-                    .setRequired(true)
+            .addStringOption(option =>
+                option.setName('title')
+                    .setDescription('اكتب عنواناً أو وصفاً للصورة (اختياري)')
+                    .setRequired(false)
             )
-            .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
-
-        new SlashCommandBuilder()
-            .setName('profile')
-            .setDescription('Send full profile')
-            .addUserOption(option =>
-                option.setName('user')
-                    .setDescription('Target user')
-                    .setRequired(true)
-            )
-            .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
     ].map(cmd => cmd.toJSON());
 
     const rest = new REST({ version: '10' }).setToken(TOKEN);
@@ -61,7 +45,6 @@ client.once('ready', async () => {
             Routes.applicationCommands(CLIENT_ID),
             { body: commands }
         );
-
         console.log('Slash commands registered.');
     } catch (err) {
         console.error(err);
@@ -70,96 +53,45 @@ client.once('ready', async () => {
 
 client.on('interactionCreate', async interaction => {
 
+    // 1. التعامل مع أمر رفع الصور
     if (interaction.isChatInputCommand()) {
+        if (interaction.commandName === 'upload_image') {
+            
+            const imageAttachment = interaction.options.getAttachment('image');
+            const title = interaction.options.getString('title') || 'صورة جديدة';
 
-        const user = interaction.options.getUser('user');
-
-        const fetchedUser = await client.users.fetch(user.id, {
-            force: true
-        });
-
-        const avatarURL = fetchedUser.displayAvatarURL({
-            size: 4096,
-            extension: 'png'
-        });
-
-        const bannerURL = fetchedUser.bannerURL({
-            size: 4096,
-            extension: 'png'
-        });
-
-        if (interaction.commandName === 'avatar') {
-
-            const embed = new EmbedBuilder()
-                .setTitle(`${user.username} Avatar`)
-                .setImage(avatarURL);
-
-            const row = new ActionRowBuilder()
-                .addComponents(
-                    new ButtonBuilder()
-                        .setCustomId(`download_avatar_${user.id}`)
-                        .setLabel('تحميل الأفاتار')
-                        .setStyle(ButtonStyle.Primary)
-                );
-
-            return interaction.reply({
-                embeds: [embed],
-                components: [row]
-            });
-        }
-
-        if (interaction.commandName === 'banner') {
-
-            if (!bannerURL) {
+            // التأكد من أن الملف المرفوع هو صورة بالفعل
+            if (!imageAttachment.contentType || !imageAttachment.contentType.startsWith('image/')) {
                 return interaction.reply({
-                    content: 'هذا المستخدم لا يملك Banner.',
+                    content: '❌ عذراً، يرجى رفع ملف صورة صالح فقط.',
                     ephemeral: true
                 });
             }
 
+            // إنشاء الـ Embed لعرض الصورة بشكل منسق
             const embed = new EmbedBuilder()
-                .setTitle(`${user.username} Banner`)
-                .setImage(bannerURL);
+                .setTitle(title)
+                .setDescription(`بواسطة: ${interaction.user}`)
+                .setImage(imageAttachment.url)
+                .setColor('#5865F2')
+                .setTimestamp();
 
+            // إنشاء زر التحميل الذي يمكن لأي شخص الضغط عليه
             const row = new ActionRowBuilder()
                 .addComponents(
                     new ButtonBuilder()
-                        .setCustomId(`download_banner_${user.id}`)
-                        .setLabel('تحميل البانر')
-                        .setStyle(ButtonStyle.Success)
+                        // نقوم بتخزين رابط الصورة داخل الـ CustomId ليتمكن البوت من قراءته لاحقاً
+                        .setCustomId(`download_${imageAttachment.id}`)
+                        .setLabel('تحميل الصورة على الخاص 📥')
+                        .setStyle(ButtonStyle.Primary)
                 );
 
-            return interaction.reply({
-                embeds: [embed],
-                components: [row]
+            // حفظ رابط الصورة مؤقتاً في ذاكرة البوت لتسهيل جلبها عند الضغط على الزر
+            if (!client.imageDb) client.imageDb = new Map();
+            client.imageDb.set(imageAttachment.id, {
+                url: imageAttachment.url,
+                title: title
             });
-        }
-
-        if (interaction.commandName === 'profile') {
-
-            const embed = new EmbedBuilder()
-                .setTitle(`${user.username} Full Profile`)
-                .addFields(
-                    {
-                        name: 'Avatar',
-                        value: `[Open Avatar](${avatarURL})`
-                    },
-                    {
-                        name: 'Banner',
-                        value: bannerURL
-                            ? `[Open Banner](${bannerURL})`
-                            : 'No Banner'
-                    }
-                )
-                .setImage(avatarURL);
-
-            const row = new ActionRowBuilder()
-                .addComponents(
-                    new ButtonBuilder()
-                        .setCustomId(`download_profile_${user.id}`)
-                        .setLabel('تحميل البروفايل كامل')
-                        .setStyle(ButtonStyle.Danger)
-                );
 
             return interaction.reply({
                 embeds: [embed],
@@ -168,75 +100,45 @@ client.on('interactionCreate', async interaction => {
         }
     }
 
+    // 2. التعامل مع ضغطة زر التحميل للخاص (متاح لجميع الأعضاء)
     if (interaction.isButton()) {
-
         const parts = interaction.customId.split('_');
-        const type = parts[1];
-        const userId = parts[2];
+        const action = parts[0];
+        const imageId = parts[1];
 
-        const target = await client.users.fetch(userId, {
-            force: true
-        });
+        if (action === 'download') {
+            // جلب بيانات الصورة من الذاكرة أو من الـ Embed نفسه كبديل احتياطي
+            const imageData = client.imageDb?.get(imageId) || {
+                url: interaction.message.embeds[0]?.image?.url,
+                title: interaction.message.embeds[0]?.title
+            };
 
-        const avatarURL = target.displayAvatarURL({
-            size: 4096,
-            extension: 'png'
-        });
-
-        const bannerURL = target.bannerURL({
-            size: 4096,
-            extension: 'png'
-        });
-
-        try {
-
-            if (type === 'avatar') {
-
-                await interaction.user.send({
-                    content: `Avatar of ${target.tag}\n${avatarURL}`
+            if (!imageData.url) {
+                return interaction.reply({
+                    content: '❌ عذراً، لم أتمكن من العثور على رابط هذه الصورة حالياً.',
+                    ephemeral: true
                 });
             }
 
-            if (type === 'banner') {
-
-                if (!bannerURL) {
-                    return interaction.reply({
-                        content: 'لا يوجد Banner لهذا المستخدم.',
-                        ephemeral: true
-                    });
-                }
-
+            try {
+                // إرسال الصورة إلى خاص الشخص الذي ضغط على الزر
                 await interaction.user.send({
-                    content: `Banner of ${target.tag}\n${bannerURL}`
+                    content: `📥 **إليك الصورة التي طلبتها:**\n**العنوان:** ${imageData.title}\n${imageData.url}`
+                });
+
+                // رسالة مخفية تظهر فقط للشخص تأكيداً على الإرسال
+                await interaction.reply({
+                    content: 'تم إرسال الصورة إلى رسائلك الخاصة بنجاح! ✅',
+                    ephemeral: true
+                });
+
+            } catch (error) {
+                // في حال كان المستخدم مغلقاً للرسائل الخاصة (DM)
+                await interaction.reply({
+                    content: '❌ لم أتمكن من إرسال الصورة لك. تأكد من فتح الرسائل الخاصة (DMs) في إعدادات السيرفر ثم أعد المحاولة.',
+                    ephemeral: true
                 });
             }
-
-            if (type === 'profile') {
-
-                let message =
-                    `Profile of ${target.tag}\n\nAvatar:\n${avatarURL}`;
-
-                if (bannerURL) {
-                    message += `\n\nBanner:\n${bannerURL}`;
-                }
-
-                await interaction.user.send({
-                    content: message
-                });
-            }
-
-            await interaction.reply({
-                content: 'تم إرسال الملفات إلى الخاص ✅',
-                ephemeral: true
-            });
-
-        } catch {
-
-            await interaction.reply({
-                content:
-                    'اعتذر منك، لكنك قافل الرسائل الخاصة (DM)، لذلك لا أستطيع إرسال الملفات.',
-                ephemeral: true
-            });
         }
     }
 });
