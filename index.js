@@ -69,7 +69,7 @@ client.on('interactionCreate', async interaction => {
                 .addComponents(
                     new ButtonBuilder()
                         .setCustomId(`download_${imageAttachment.id}`)
-                        .setLabel('📥') 
+                        .setLabel('1517623831898882220') 
                         .setStyle(ButtonStyle.Secondary) // لون رمادي هادئ يناسب شكل الأيقونات
                 );
 
