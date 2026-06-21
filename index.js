@@ -4,13 +4,11 @@ const {
     SlashCommandBuilder,
     Routes,
     REST,
-    EmbedBuilder,
     ActionRowBuilder,
     ButtonBuilder,
     ButtonStyle
 } = require('discord.js');
 
-// قراءة المتغيرات من سيرفر Railway تلقائياً لحماية بياناتك
 const TOKEN = process.env.TOKEN;
 const CLIENT_ID = process.env.CLIENT_ID;
 
@@ -19,16 +17,15 @@ const client = new Client({
 });
 
 client.once('ready', async () => {
-    console.log(`${client.user.tag} Online and ready to upload!`);
+    console.log(`${client.user.tag} Ready with new updates!`);
 
-    // إنشاء أمر الـ Slash الجديد لرفع الصور
     const commands = [
         new SlashCommandBuilder()
             .setName('upload_image')
-            .setDescription('رفع صورة إلى السيرفر مع زر تحميل للخاص')
+            .setDescription('رفع صورة إلى السيرفر مع زر تحميل')
             .addAttachmentOption(option =>
                 option.setName('image')
-                    .setDescription('اختر الصورة من مكتبة الصور الخاصة بك')
+                    .setDescription('اختر الصورة من مكتبتك')
                     .setRequired(true)
             )
             .addStringOption(option =>
@@ -53,14 +50,13 @@ client.once('ready', async () => {
 
 client.on('interactionCreate', async interaction => {
 
-    // 1. التعامل مع أمر رفع الصور
+    // 1. عند استخدام أمر الـ Slash لرفع الصورة
     if (interaction.isChatInputCommand()) {
         if (interaction.commandName === 'upload_image') {
             
             const imageAttachment = interaction.options.getAttachment('image');
             const title = interaction.options.getString('title') || 'صورة جديدة';
 
-            // التأكد من أن الملف المرفوع هو صورة بالفعل
             if (!imageAttachment.contentType || !imageAttachment.contentType.startsWith('image/')) {
                 return interaction.reply({
                     content: '❌ عذراً، يرجى رفع ملف صورة صالح فقط.',
@@ -68,52 +64,41 @@ client.on('interactionCreate', async interaction => {
                 });
             }
 
-            // إنشاء الـ Embed لعرض الصورة بشكل منسق
-            const embed = new EmbedBuilder()
-                .setTitle(title)
-                .setDescription(`بواسطة: ${interaction.user}`)
-                .setImage(imageAttachment.url)
-                .setColor('#5865F2')
-                .setTimestamp();
-
-            // إنشاء زر التحميل الذي يمكن لأي شخص الضغط عليه
+            // تعديل شكل الزر: بدون كلام ويحتوي على إيموجي التحميل 📥 فقط
             const row = new ActionRowBuilder()
                 .addComponents(
                     new ButtonBuilder()
-                        // نقوم بتخزين رابط الصورة داخل الـ CustomId ليتمكن البوت من قراءته لاحقاً
                         .setCustomId(`download_${imageAttachment.id}`)
-                        .setLabel('تحميل الصورة على الخاص 📥')
-                        .setStyle(ButtonStyle.Primary)
+                        .setLabel('📥') 
+                        .setStyle(ButtonStyle.Secondary) // لون رمادي هادئ يناسب شكل الأيقونات
                 );
 
-            // حفظ رابط الصورة مؤقتاً في ذاكرة البوت لتسهيل جلبها عند الضغط على الزر
+            // حفظ البيانات في الذاكرة لتمرير الرابط والعنوان للزر
             if (!client.imageDb) client.imageDb = new Map();
             client.imageDb.set(imageAttachment.id, {
                 url: imageAttachment.url,
                 title: title
             });
 
+            // إرسال الصورة كـ نص ورابط مباشر لتظهر بحجمها الكامل والضخم بدون إطار الـ Embed
             return interaction.reply({
-                embeds: [embed],
+                content: `📸 **${title}** - بواسطة: ${interaction.user}\n${imageAttachment.url}`,
                 components: [row]
             });
         }
     }
 
-    // 2. التعامل مع ضغطة زر التحميل للخاص (متاح لجميع الأعضاء)
+    // 2. عند الضغط على زر التحميل 📥
     if (interaction.isButton()) {
         const parts = interaction.customId.split('_');
         const action = parts[0];
         const imageId = parts[1];
 
         if (action === 'download') {
-            // جلب بيانات الصورة من الذاكرة أو من الـ Embed نفسه كبديل احتياطي
-            const imageData = client.imageDb?.get(imageId) || {
-                url: interaction.message.embeds[0]?.image?.url,
-                title: interaction.message.embeds[0]?.title
-            };
+            // جلب رابط الصورة من الذاكرة
+            const imageData = client.imageDb?.get(imageId);
 
-            if (!imageData.url) {
+            if (!imageData || !imageData.url) {
                 return interaction.reply({
                     content: '❌ عذراً، لم أتمكن من العثور على رابط هذه الصورة حالياً.',
                     ephemeral: true
@@ -121,21 +106,22 @@ client.on('interactionCreate', async interaction => {
             }
 
             try {
-                // إرسال الصورة إلى خاص الشخص الذي ضغط على الزر
+                // المحاولة الأولى: إرسال الصورة في الخاص (DM)
                 await interaction.user.send({
                     content: `📥 **إليك الصورة التي طلبتها:**\n**العنوان:** ${imageData.title}\n${imageData.url}`
                 });
 
-                // رسالة مخفية تظهر فقط للشخص تأكيداً على الإرسال
+                // تأكيد الإرسال برسالة مخفية تظهر له وحده
                 await interaction.reply({
                     content: 'تم إرسال الصورة إلى رسائلك الخاصة بنجاح! ✅',
                     ephemeral: true
                 });
 
             } catch (error) {
-                // في حال كان المستخدم مغلقاً للرسائل الخاصة (DM)
+                // المحاولة الثانية: إذا كان الخاص مغلقاً (DM Closed)
+                // يرسل له البوت الصورة فوراً في نفس الروم لكن مخفية (تظهر له وحده فقط)
                 await interaction.reply({
-                    content: '❌ لم أتمكن من إرسال الصورة لك. تأكد من فتح الرسائل الخاصة (DMs) في إعدادات السيرفر ثم أعد المحاولة.',
+                    content: `⚠️ **أنت مقفل خاصك، لذلك إليك الصورة هنا (لا أحد يراها غيرك):**\n${imageData.url}`,
                     ephemeral: true
                 });
             }
