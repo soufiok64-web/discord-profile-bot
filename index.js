@@ -50,43 +50,44 @@ client.once('ready', async () => {
 
 client.on('interactionCreate', async interaction => {
 
-    // 1. عند استخدام أمر الـ Slash لرفع الصورة
-    if (interaction.isChatInputCommand()) {
-        if (interaction.commandName === 'upload_image') {
-            
-            const imageAttachment = interaction.options.getAttachment('image');
-            const title = interaction.options.getString('title') || 'صورة جديدة';
+    // 1. عند استخدام أمر الـ Slash // 1. عند استخدام أمر الـ Slash لرفع الصورة
+if (interaction.isChatInputCommand()) {
+    if (interaction.commandName === 'upload_image') {
+        
+        const imageAttachment = interaction.options.getAttachment('image');
+        const title = interaction.options.getString('title') || 'صورة جديدة';
 
-            if (!imageAttachment.contentType || !imageAttachment.contentType.startsWith('image/')) {
-                return interaction.reply({
-                    content: '❌ عذراً، يرجى رفع ملف صورة صالح فقط.',
-                    ephemeral: true
-                });
-            }
-
-            // تعديل شكل الزر: بدون كلام ويحتوي على إيموجي التحميل 📥 فقط
-            const row = new ActionRowBuilder()
-                .addComponents(
-                    new ButtonBuilder()
-                        .setCustomId(`download_${imageAttachment.id}`)
-                        .setLabel('1517623831898882220') 
-                        .setStyle(ButtonStyle.Secondary) // لون رمادي هادئ يناسب شكل الأيقونات
-                );
-
-            // حفظ البيانات في الذاكرة لتمرير الرابط والعنوان للزر
-            if (!client.imageDb) client.imageDb = new Map();
-            client.imageDb.set(imageAttachment.id, {
-                url: imageAttachment.url,
-                title: title
-            });
-
-            // إرسال الصورة كـ نص ورابط مباشر لتظهر بحجمها الكامل والضخم بدون إطار الـ Embed
+        if (!imageAttachment.contentType || !imageAttachment.contentType.startsWith('image/')) {
             return interaction.reply({
-                content: `📸 **${title}** - بواسطة: ${interaction.user}\n${imageAttachment.url}`,
-                components: [row]
+                content: '❌ عذراً، يرجى رفع ملف صورة صالح فقط.',
+                ephemeral: true
             });
         }
+
+        // تعديل شكل الزر: الإيموجي المخصص حقك وبدون نص
+        const row = new ActionRowBuilder()
+            .addComponents(
+                new ButtonBuilder()
+                    .setCustomId(`download_${imageAttachment.id}`)
+                    .setEmoji('1517623831898882220') 
+                    .setStyle(ButtonStyle.Secondary)
+            );
+
+        // حفظ البيانات في الذاكرة لتمريرها عند الضغط على الزر
+        if (!client.imageDb) client.imageDb = new Map();
+        client.imageDb.set(imageAttachment.id, {
+            url: imageAttachment.url,
+            title: title
+        });
+
+        // هنا السر: نرسل اسم الشخص والعنوان كـ نص، ونعيد إرسال الصورة كمرفق رسمي (Files) ليختفي الرابط تماماً!
+        return interaction.reply({
+            content: `📸 **${title}** - بواسطة: ${interaction.user}`,
+            files: [imageAttachment.url], // إرسال الصورة كملف مرفق لإخفاء الرابط النصي
+            components: [row]
+        });
     }
+}
 
     // 2. عند الضغط على زر التحميل 📥
     if (interaction.isButton()) {
